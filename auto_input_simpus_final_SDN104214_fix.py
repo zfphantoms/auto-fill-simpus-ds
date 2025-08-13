@@ -1,9 +1,11 @@
-# auto_input_simpus_final_SDN104214_fix_regions_kel.py
-# -----------------------------------------------------------
-# Gaya lama (openpyxl + row[index]) + tanggal mm/dd/YYYY
-# + mapping Provinsi & Kab/Kota dari List_Kecamatan.xlsx
-# + isi Kelurahan dari kolom Excel siswa (tanpa perlu mapping baru)
-# -----------------------------------------------------------
+# auto_input_simpus_final_SDN104214_fullauto.py
+# --------------------------------------------------------------------
+# - Baca Excel "SDN 104214 1-6 2025.xlsx" (gaya lama openpyxl + index)
+# - Format Tanggal Lahir => mm/dd/YYYY
+# - Provinsi/Kabupaten/Kota dari List_Kecamatan.xlsx (robust)
+# - Kelurahan dari kolom Excel (tanpa mapping tambahan)
+# - FULL AUTO: klik "TAMBAH DATA" -> isi -> klik "TAMBAH" -> next row
+# --------------------------------------------------------------------
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -46,7 +48,6 @@ def _compact(s: str) -> str:
     return _norm_text(s).replace(" ", "")
 
 def fmt_mmddyyyy(val):
-    """yyyy-mm-dd / variasi lain / datetime -> mm/dd/YYYY; gagal -> ''."""
     if val is None: return ""
     try:
         if isinstance(val, datetime):
@@ -77,11 +78,9 @@ def clean_kecamatan_input(kec_raw: str) -> str:
     return up
 
 def clean_kelurahan_input(vill_raw: str) -> str:
-    """Bersihkan nilai kelurahan: buang 'Desa/Kel.', 'Kel.', 'Desa', dsb."""
     s = str(vill_raw or "").strip()
     if not s: return ""
     up = _norm_text(s)
-    # hapus awalan umum
     up = up.replace("DESA KEL", " ").replace("DESA/KEL", " ")
     up = up.replace("DESA", " ").replace("KELURAHAN", " ").replace("KEL", " ").replace("KEL.", " ")
     up = re.sub(r"\s+", " ", up).strip()
@@ -170,13 +169,9 @@ IDX_NIK       = find_col("nik","no ktp","nomor ktp","no. ktp","no nik","no. nik"
 IDX_AGAMA     = find_col("agama")
 IDX_ALAMAT    = find_col("alamat","alamat domisili","alamat rumah")
 IDX_KEC       = find_col("kecamatan","kec","kecamatan domisili")
-# >>> Tambah deteksi kolom kelurahan <<<
 IDX_KEL       = find_col("kelurahan","desa","desa/kel","desa/kelurahan","desa/kel.")
 
-print("ℹ️ Index kolom:", {
-    "nama":IDX_NAMA,"jk":IDX_JK,"tempat_lahir":IDX_TMP_LAHIR,"tanggal_lahir":IDX_TGL_LAHIR,
-    "nik":IDX_NIK,"agama":IDX_AGAMA,"alamat":IDX_ALAMAT,"kecamatan":IDX_KEC,"kelurahan":IDX_KEL
-})
+print("ℹ️ Index kolom:", {"nama":IDX_NAMA,"jk":IDX_JK,"tempat_lahir":IDX_TMP_LAHIR,"tanggal_lahir":IDX_TGL_LAHIR,"nik":IDX_NIK,"agama":IDX_AGAMA,"alamat":IDX_ALAMAT,"kecamatan":IDX_KEC,"kelurahan":IDX_KEL})
 
 DATA_FIRST_ROW = header_row + 1
 
@@ -187,10 +182,47 @@ driver = webdriver.Chrome(options=chrome_options)
 driver.maximize_window()
 driver.get(URL_LOGIN)
 print("✅ Silakan login manual (captcha) lalu klik LOGIN")
-input("🔐 Tekan ENTER setelah berhasil login...")
+print("⏳ Menunggu sesi login, halaman pasien akan dibuka otomatis...")
 
-driver.get(URL_PASIEN)
-time.sleep(2)
+# Cek login: coba buka /pasien berulang sampai tombol 'TAMBAH DATA' muncul
+def wait_until_pasien():
+    for _ in range(120):  # ~6 menit
+        driver.get(URL_PASIEN)
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'button[data-bs-target="#modalTambahData"]'))
+            )
+            return True
+        except Exception:
+            time.sleep(3)
+    return False
+
+if not wait_until_pasien():
+    print("❌ Tidak berhasil masuk ke halaman PASIEN. Pastikan sudah login.")
+    sys.exit(1)
+
+# Helper: buka modal, submit, dan tunggu
+def open_tambah_modal():
+    # pastikan di atas
+    driver.execute_script("window.scrollTo(0, 0);")
+    btn = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-bs-target="#modalTambahData"]'))
+    )
+    btn.click()
+    # tunggu modal terbuka (id = modalTambahData)
+    WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located((By.ID, "modalTambahData"))
+    )
+
+def submit_and_wait_close():
+    submit_btn = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, '//div[@id="modalTambahData"]//button[@type="submit" and contains(., "TAMBAH")]'))
+    )
+    submit_btn.click()
+    # tunggu modal tertutup
+    WebDriverWait(driver, 15).until(
+        EC.invisibility_of_element_located((By.ID, "modalTambahData"))
+    )
 
 # ====== LOOP ======
 JUMLAH_DATA = NOMOR_SISWA_AKHIR - NOMOR_SISWA_AWAL + 1
@@ -221,46 +253,47 @@ for i in range(JUMLAH_DATA):
     kabupaten_disp, provinsi_disp = lookup_region(kec_raw)
     kelurahan_clean = clean_kelurahan_input(kel_raw)
 
-    print(f"\n🟢 Siapkan form untuk: {nama} | Kec='{kec_raw}' → Kab='{kabupaten_disp}' | Prov='{provinsi_disp}' | Kel='{kelurahan_clean}'")
-    input("➡️ Setelah klik 'TAMBAH DATA' & dropdown wilayah muncul, tekan ENTER untuk isi otomatis...")
+    print(f"\n▶ {i+1}. {nama} | Kec='{kec_raw}' → Kab='{kabupaten_disp}' | Prov='{provinsi_disp}' | Kel='{kelurahan_clean}'")
 
     try:
-        # === Identitas dasar ===
-        driver.find_element(By.XPATH, '//input[@placeholder="Nama"]').clear()
-        driver.find_element(By.XPATH, '//input[@placeholder="Nama"]').send_keys(str(nama))
+        # buka form otomatis
+        open_tambah_modal()
 
-        Select(driver.find_element(By.XPATH, '//select[./option[contains(text(), "Jenis Kelamin")]]')) \
+        # === Identitas ===
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Nama"]').clear()
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Nama"]').send_keys(str(nama))
+
+        Select(driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//select[./option[contains(text(), "Jenis Kelamin")]]')) \
             .select_by_visible_text("Perempuan" if jk.upper() == "P" else "Laki-Laki")
 
-        driver.find_element(By.XPATH, '//input[@placeholder="Tempat Lahir"]').clear()
-        driver.find_element(By.XPATH, '//input[@placeholder="Tempat Lahir"]').send_keys(str(tempat_lahir or ""))
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Tempat Lahir"]').clear()
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Tempat Lahir"]').send_keys(str(tempat_lahir or ""))
 
-        el = driver.find_element(By.XPATH, '//input[@placeholder="Tanggal Lahir"]')
+        el = driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Tanggal Lahir"]')
         el.clear(); el.send_keys(tanggal_lahir)
 
-        driver.find_element(By.XPATH, '//input[@placeholder="NIK"]').clear()
-        driver.find_element(By.XPATH, '//input[@placeholder="NIK"]').send_keys(nik)
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="NIK"]').clear()
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="NIK"]').send_keys(nik)
 
         if agama:
-            Select(driver.find_element(By.XPATH, '//select[./option[contains(text(), "Agama")]]')) \
+            Select(driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//select[./option[contains(text(), "Agama")]]')) \
                 .select_by_visible_text(agama.upper())
 
-        driver.find_element(By.XPATH, '//input[@placeholder="Alamat"]').clear()
-        driver.find_element(By.XPATH, '//input[@placeholder="Alamat"]').send_keys(str(alamat or ""))
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Alamat"]').clear()
+        driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Alamat"]').send_keys(str(alamat or ""))
 
-        # === Provinsi ===
+        # === Wilayah ===
         if provinsi_disp:
             prov_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Provinsi")]/following-sibling::div//input'))
+                EC.presence_of_element_located((By.XPATH, '//div[@id="modalTambahData"]//label[contains(text(), "Provinsi")]/following-sibling::div//input'))
             )
             prov_input.click(); time.sleep(0.3); prov_input.clear()
             prov_input.send_keys(provinsi_disp); time.sleep(1.0)
             prov_input.send_keys(Keys.ARROW_DOWN); prov_input.send_keys(Keys.ENTER)
 
-        # === Kabupaten/Kota ===
         if kabupaten_disp:
             kab_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Kabupaten")]/following-sibling::div//input'))
+                EC.presence_of_element_located((By.XPATH, '//div[@id="modalTambahData"]//label[contains(text(), "Kabupaten")]/following-sibling::div//input'))
             )
             kab_input.click(); time.sleep(0.3); kab_input.clear()
             kab_to_type = kabupaten_disp.strip()
@@ -269,33 +302,36 @@ for i in range(JUMLAH_DATA):
             kab_input.send_keys(kab_to_type); time.sleep(1.0)
             kab_input.send_keys(Keys.ARROW_DOWN); kab_input.send_keys(Keys.ENTER)
 
-        # === Kecamatan ===
         if kec_raw:
             kec_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Kecamatan")]/following-sibling::div//input'))
+                EC.presence_of_element_located((By.XPATH, '//div[@id="modalTambahData"]//label[contains(text(), "Kecamatan")]/following-sibling::div//input'))
             )
             kec_input.click(); time.sleep(0.3); kec_input.clear()
             kec_try = clean_kecamatan_input(kec_raw)
             kec_input.send_keys(kec_try); time.sleep(0.8)
             kec_input.send_keys(Keys.ARROW_DOWN); kec_input.send_keys(Keys.ENTER)
 
-        # === Kelurahan ===
         if kelurahan_clean:
-            # tunggu data kelurahan ter-load setelah pilih kecamatan
-            time.sleep(1.0)
+            time.sleep(1.0)  # beri waktu list kelurahan ter-load setelah pilih kecamatan
             kel_input = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Kelurahan")]/following-sibling::div//input'))
+                EC.presence_of_element_located((By.XPATH, '//div[@id="modalTambahData"]//label[contains(text(), "Kelurahan")]/following-sibling::div//input'))
             )
             kel_input.click(); time.sleep(0.3); kel_input.clear()
-            # coba ketik versi bersih
             kel_input.send_keys(kelurahan_clean); time.sleep(0.9)
             kel_input.send_keys(Keys.ARROW_DOWN); kel_input.send_keys(Keys.ENTER)
-        else:
-            print(f"⚠️ Kelurahan kosong/tdk dikenali untuk {nama}. Lewati pengisian kelurahan.")
 
-        print("✅ Data berhasil diisi. Silakan klik tombol TAMBAH.")
+        # submit & tunggu modal tertutup
+        submit_and_wait_close()
+        print("✅ Tersimpan")
     except Exception as e:
         print(f"❌ Gagal input untuk {nama} → {e}")
+        # coba tutup modal kalau masih terbuka, agar loop lanjut
+        try:
+            close_btn = driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//button[contains(., "CLOSE") or contains(., "Close")]')
+            close_btn.click()
+            WebDriverWait(driver, 5).until(EC.invisibility_of_element_located((By.ID, "modalTambahData")))
+        except Exception:
+            pass
         continue
 
-print("\n🍀 Selesai.")
+print("\n🍀 Selesai semua baris.")
