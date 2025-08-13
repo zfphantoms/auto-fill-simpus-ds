@@ -1,6 +1,13 @@
-# auto_input_simpus_fix.py
-# Full otomatis + jeda 2 detik sebelum klik "TAMBAH DATA" & "TAMBAH"
-# + Logging kegagalan ke failed-log.txt
+# auto_input_simpus_final_SDN104214_manual.py
+# Mode MANUAL:
+# - Kamu klik "TAMBAH DATA" sendiri (script menunggu ENTER lalu isi otomatis)
+# - Setelah terisi, kamu klik "TAMBAH" sendiri (script menunggu ENTER baru lanjut)
+# Fitur:
+# - Tanggal lahir -> mm/dd/YYYY
+# - Prov/Kab/Kec dari List_Kecamatan.xlsx (robust)
+# - Kelurahan dari Excel
+# - Log gagal ke failed-log.txt
+# - Khusus SIBIRU-BIRU: yang DIKETIK ke UI = "BIRU" (mapping tetap "BIRU-BIRU")
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -8,7 +15,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import StaleElementReferenceException  # <<<
+from selenium.common.exceptions import StaleElementReferenceException
 from openpyxl import load_workbook
 from datetime import datetime
 import time, re, sys, unicodedata
@@ -20,9 +27,6 @@ URL_PASIEN = "https://dinkesds-simpus.deliserdangkab.go.id/pasien"
 EXCEL_PATH_SISWA = "SDN 104214 1-6 2025.xlsx"
 EXCEL_PATH_KEC   = "List_Kecamatan.xlsx"
 FAILED_LOG_PATH  = "failed-log.txt"
-
-# Jeda klik (detik)
-CLICK_DELAY_SEC = 2
 
 # === INPUT USER ===
 NOMOR_SISWA_AWAL = int(input("Masukkan nomor urut siswa awal (1-based): "))
@@ -73,9 +77,20 @@ def clean_kecamatan_input(kec_raw: str) -> str:
     if low in ["stm hulu","s.t.m hulu","st m hulu","stmhulu"]:
         return "SINEMBAH TANJUNG MUDA HULU"
     up = _norm_text(k)
+    # Normalisasi variasi ke bentuk mapping "BIRU BIRU"
     if "SIBIRU BIRU" in up or "SI BIRU" in up:
         up = "BIRU BIRU"
     return up
+
+def ui_kecamatan_input(kec_raw: str) -> str:
+    """
+    Nilai yang DIKETIK ke UI untuk field Kecamatan.
+    Khusus SIBIRU-BIRU → ketik 'BIRU' (bukan 'BIRU BIRU').
+    """
+    v = clean_kecamatan_input(kec_raw)  # UPPER & dirapikan
+    if "BIRU BIRU" in v:
+        return "BIRU"
+    return v
 
 def clean_kelurahan_input(vill_raw: str) -> str:
     s = str(vill_raw or "").strip()
@@ -104,7 +119,7 @@ col_kec = _find_col(df_ref, ["KEC"]) or _find_col(df_ref, ["KECAMATAN"])
 col_kab = _find_col(df_ref, ["KAB", "KOTA"])
 col_prov= _find_col(df_ref, ["PROV"])
 if not all([col_kec, col_kab, col_prov]):
-    print("❌ List_Kecamatan.xlsx harus punya kolom berisi 'Kecamatan', 'Kabupaten/Kota', dan 'Provinsi'.")
+    print("❌ List_Kecamatan.xlsx harus punya kolom 'Kecamatan', 'Kabupaten/Kota', dan 'Provinsi'.")
     sys.exit(1)
 
 kec_to_region = {}
@@ -182,48 +197,39 @@ driver = webdriver.Chrome(options=opt)
 driver.maximize_window()
 driver.get(URL_LOGIN)
 print("✅ Silakan login manual (captcha) lalu klik LOGIN")
-print("⏳ Menunggu sesi login, halaman PASIEN akan dibuka otomatis...")
+input("🔐 Tekan ENTER setelah BERHASIL login...")
 
-def wait_until_pasien():
-    for _ in range(120):  # ~6 menit
-        driver.get(URL_PASIEN)
-        try:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'button[data-bs-target="#modalTambahData"]'))
-            )
-            return True
-        except Exception:
-            time.sleep(3)
-    return False
+# buka halaman pasien
+driver.get(URL_PASIEN)
+time.sleep(2)
 
-if not wait_until_pasien():
-    print("❌ Tidak berhasil masuk ke halaman PASIEN. Pastikan sudah login.")
-    sys.exit(1)
-
-# ===== Helper buka & submit modal (dengan jeda 2 detik) =====
-def open_tambah_modal():
-    driver.execute_script("window.scrollTo(0, 0);")
-    btn = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-bs-target="#modalTambahData"]'))
-    )
-    time.sleep(CLICK_DELAY_SEC)           # <<< jeda sebelum klik
-    btn.click()
-    WebDriverWait(driver, 10).until(
-        EC.visibility_of_element_located((By.ID, "modalTambahData"))
-    )
-
-def submit_and_wait_close():
-    submit_btn = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//div[@id="modalTambahData"]//button[@type="submit" and contains(., "TAMBAH")]'))
-    )
-    time.sleep(CLICK_DELAY_SEC)           # <<< jeda sebelum klik submit
-    submit_btn.click()
-    WebDriverWait(driver, 15).until(
-        EC.invisibility_of_element_located((By.ID, "modalTambahData"))
-    )
+# ===== Helper autocomplete wilayah (dalam modal) =====
+def select_autocomplete_field(label_text, value, prefix=""):
+    if not value:
+        return
+    try:
+        xpath_input = f'//div[@id="modalTambahData"]//label[contains(text(), "{label_text}")]/following-sibling::div//input'
+        for _ in range(3):  # retry max 3x
+            try:
+                input_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, xpath_input))
+                )
+                input_field.click(); time.sleep(0.3)
+                input_field.clear(); time.sleep(0.3)
+                input_field.send_keys(f"{prefix}{value}".strip())
+                time.sleep(1.0)
+                input_field.send_keys(Keys.ARROW_DOWN)
+                input_field.send_keys(Keys.ENTER)
+                time.sleep(1.0)
+                return
+            except StaleElementReferenceException:
+                time.sleep(1.0)
+        print(f"⚠️ Gagal set field '{label_text}' dengan nilai '{value}'")
+    except Exception as e:
+        print(f"⚠️ Error saat isi '{label_text}': {e}")
 
 # ====== LOOP ======
-FAILED = []  # kumpulkan nama yang gagal
+FAILED = []
 JUMLAH_DATA = NOMOR_SISWA_AKHIR - NOMOR_SISWA_AWAL + 1
 
 for i in range(JUMLAH_DATA):
@@ -251,12 +257,14 @@ for i in range(JUMLAH_DATA):
 
     kabupaten_disp, provinsi_disp = lookup_region(kec_raw)
     kelurahan_clean = clean_kelurahan_input(kel_raw)
+    kec_ui_value    = ui_kecamatan_input(kec_raw)
 
     print(f"\n▶ {i+1}. {nama} | Kec='{kec_raw}' → Kab='{kabupaten_disp}' | Prov='{provinsi_disp}' | Kel='{kelurahan_clean}'")
+    input("🟢 Klik tombol 'TAMBAH DATA' untuk membuka form. Setelah modal terbuka, tekan ENTER untuk mengisi otomatis...")
 
     try:
-        # buka form otomatis (dengan jeda klik)
-        open_tambah_modal()
+        # Pastikan modal sudah terbuka
+        WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, "modalTambahData")))
 
         # === Identitas ===
         driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Nama"]').clear()
@@ -281,57 +289,28 @@ for i in range(JUMLAH_DATA):
         driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Alamat"]').clear()
         driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//input[@placeholder="Alamat"]').send_keys(str(alamat or ""))
 
-        # === Wilayah (stabil, hindari stale reference) ===
-        def select_autocomplete_field(label_text, value, prefix=""):
-            try:
-                xpath_input = f'//div[@id="modalTambahData"]//label[contains(text(), "{label_text}")]/following-sibling::div//input'
-                for _ in range(3):  # retry max 3x
-                    try:
-                        input_field = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, xpath_input))
-                        )
-                        input_field.click()
-                        time.sleep(0.3)
-                        input_field.clear()
-                        time.sleep(0.3)
-                        input_field.send_keys(f"{prefix}{value}".strip())
-                        time.sleep(1.0)
-                        input_field.send_keys(Keys.ARROW_DOWN)
-                        input_field.send_keys(Keys.ENTER)
-                        time.sleep(1.2)
-                        return True
-                    except StaleElementReferenceException:
-                        time.sleep(1.0)
-                print(f"⚠️ Gagal set field '{label_text}' dengan nilai '{value}'")
-            except Exception as e:
-                print(f"⚠️ Error saat isi '{label_text}': {e}")
-
-        # Provinsi
+        # === Wilayah ===
         if provinsi_disp:
             select_autocomplete_field("Provinsi", provinsi_disp)
 
-        # Kabupaten
         if kabupaten_disp:
             kab_text = kabupaten_disp.strip()
             if not kab_text.upper().startswith(("KABUPATEN ", "KOTA ")):
                 kab_text = "KABUPATEN " + kab_text
             select_autocomplete_field("Kabupaten", kab_text)
 
-        # Kecamatan
-        if kec_raw:
-            select_autocomplete_field("Kecamatan", clean_kecamatan_input(kec_raw))
+        if kec_ui_value:
+            select_autocomplete_field("Kecamatan", kec_ui_value)
 
-        # Kelurahan
         if kelurahan_clean:
             select_autocomplete_field("Kelurahan", kelurahan_clean)
 
-        # submit (dengan jeda klik) & tunggu modal tertutup
-        submit_and_wait_close()
-        print("✅ Tersimpan")
+        print("✅ Data berhasil diisi.")
+        
     except Exception as e:
         print(f"❌ Gagal input untuk {nama} → {e}")
-        FAILED.append(str(nama))  # <<<< catat nama yang gagal
-        # tutup modal jika masih terbuka, lanjutkan loop
+        FAILED.append(str(nama))
+        # Coba tutup modal (biar siap untuk iterasi berikutnya)
         try:
             close_btn = driver.find_element(By.XPATH, '//div[@id="modalTambahData"]//button[contains(., "CLOSE") or contains(., "Close")]')
             close_btn.click()
