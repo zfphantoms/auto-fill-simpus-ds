@@ -1,9 +1,9 @@
-# auto_input_simpus_final_SDN104214_manual.py
+# simpus.py
 # Mode MANUAL:
 # - Kamu klik "TAMBAH DATA" sendiri (script menunggu ENTER lalu isi otomatis)
-# - Setelah terisi, kamu klik "TAMBAH" sendiri (script menunggu ENTER baru lanjut)
+# - Kamu juga klik "TAMBAH" sendiri
 # Fitur:
-# - Tanggal lahir -> mm/dd/YYYY
+# - Tanggal lahir -> PILIH: mm/dd/YYYY atau dd/mm/YYYY saat runtime
 # - Prov/Kab/Kec dari List_Kecamatan.xlsx (robust)
 # - Kelurahan dari Excel
 # - Log gagal ke failed-log.txt
@@ -34,6 +34,11 @@ NOMOR_SISWA_AKHIR = int(input("Masukkan nomor urut siswa akhir: "))
 if NOMOR_SISWA_AKHIR < NOMOR_SISWA_AWAL:
     raise ValueError("❌ Nomor siswa akhir harus >= awal.")
 
+# Pilih format tanggal output
+fmt_choice = input("Pilih format tanggal lahir (1=mm/dd/yyyy, 2=dd/mm/yyyy) [1]: ").strip()
+OUT_DATE_FMT = "%d/%m/%Y" if fmt_choice == "2" else "%m/%d/%Y"
+print(f"ℹ️ Output tanggal akan menggunakan format: {OUT_DATE_FMT.replace('%','').lower()}")
+
 # ===== UTIL =====
 def _norm_text(s: str) -> str:
     s = "" if s is None else str(s)
@@ -51,22 +56,35 @@ def _norm_text(s: str) -> str:
 def _compact(s: str) -> str:
     return _norm_text(s).replace(" ", "")
 
-def fmt_mmddyyyy(val):
-    if val is None: return ""
+def fmt_date(val, out_fmt="%m/%d/%Y"):
+    """Parse berbagai input (datetime/string) lalu format ke out_fmt."""
+    if val is None:
+        return ""
     try:
         if isinstance(val, datetime):
-            return val.strftime("%m/%d/%Y")
+            return val.strftime(out_fmt)
         s = str(val).strip()
-        for fmt in ("%Y-%m-%d","%d/%m/%Y","%d-%m-%Y","%m/%d/%Y","%Y/%m/%d","%d.%m.%Y"):
+        if not s:
+            return ""
+        # Coba beberapa format umum dulu
+        in_fmts = (
+            "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y",
+            "%Y/%m/%d", "%d.%m.%Y", "%m-%d-%Y", "%m.%d.%Y"
+        )
+        for f in in_fmts:
             try:
-                d = datetime.strptime(s, fmt)
-                return d.strftime("%m/%d/%Y")
+                d = datetime.strptime(s, f)
+                return d.strftime(out_fmt)
             except Exception:
-                continue
-        d = pd.to_datetime(s, dayfirst=True, errors="raise")
-        return d.strftime("%m/%d/%Y")
+                pass
+        # Fallback: pandas to_datetime, coba dayfirst True lalu False
+        for dayfirst in (True, False):
+            d = pd.to_datetime(s, dayfirst=dayfirst, errors="coerce")
+            if not pd.isna(d):
+                return pd.Timestamp(d).strftime(out_fmt)
     except Exception:
-        return ""
+        pass
+    return ""
 
 def clean_kecamatan_input(kec_raw: str) -> str:
     k = str(kec_raw or "").strip()
@@ -83,11 +101,9 @@ def clean_kecamatan_input(kec_raw: str) -> str:
     return up
 
 def ui_kecamatan_input(kec_raw: str) -> str:
-    """
-    Nilai yang DIKETIK ke UI untuk field Kecamatan.
-    Khusus SIBIRU-BIRU → ketik 'BIRU' (bukan 'BIRU BIRU').
-    """
-    v = clean_kecamatan_input(kec_raw)  # UPPER & dirapikan
+    """Nilai yang DIKETIK ke UI untuk field Kecamatan.
+       Khusus SIBIRU-BIRU → ketik 'BIRU' (bukan 'BIRU BIRU')."""
+    v = clean_kecamatan_input(kec_raw)
     if "BIRU BIRU" in v:
         return "BIRU"
     return v
@@ -251,7 +267,7 @@ for i in range(JUMLAH_DATA):
     kec_raw      = get(IDX_KEC)
     kel_raw      = get(IDX_KEL)
 
-    tanggal_lahir = fmt_mmddyyyy(tgl_raw)
+    tanggal_lahir = fmt_date(tgl_raw, OUT_DATE_FMT)
     if not tanggal_lahir:
         print(f"⚠️ Gagal format tanggal: {nama} -> {tgl_raw}")
 
@@ -306,7 +322,7 @@ for i in range(JUMLAH_DATA):
             select_autocomplete_field("Kelurahan", kelurahan_clean)
 
         print("✅ Data berhasil diisi.")
-        
+
     except Exception as e:
         print(f"❌ Gagal input untuk {nama} → {e}")
         FAILED.append(str(nama))
