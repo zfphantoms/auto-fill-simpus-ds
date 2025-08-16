@@ -24,7 +24,7 @@ import pandas as pd
 # === KONFIGURASI ===
 URL_LOGIN = "https://dinkesds-simpus.deliserdangkab.go.id/"
 URL_PASIEN = "https://dinkesds-simpus.deliserdangkab.go.id/pasien"
-EXCEL_PATH_SISWA = "SDN 104214 1-6 2025.xlsx"
+EXCEL_PATH_SISWA = "DATA SDN 104213 2025.xlsx"
 EXCEL_PATH_KEC   = "List_Kecamatan.xlsx"
 FAILED_LOG_PATH  = "failed-log.txt"
 
