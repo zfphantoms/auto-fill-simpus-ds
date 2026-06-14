@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# PyInstaller build folders and files
+build/
+dist/
+*.spec
+
+# Excel and Archive Files
+*.xlsx
+*.xls
+*.zip
+
+# Log files
+failed-log.txt
+*.log
+
+# Unrelated Directories
+/Laporan Fingerprint/
+/SIPP ke Simpus/
+/Simpus ke SIPP/
+
+# OS Files
+.DS_Store
+Thumbs.db
