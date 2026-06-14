@@ -24,3 +24,9 @@ failed-log.txt
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Unrelated Scripts
+get_nik.py
+input_nik.py
+simpus.py
+test.py
