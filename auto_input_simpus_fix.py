@@ -564,6 +564,8 @@ IDX_KEL       = find_col("kelurahan", "desa", "desa/kel", "desa/kelurahan", "des
 # --- Kolom opsional ---
 IDX_BPJS          = find_col("no bpjs", "no. bpjs", "bpjs", "nomor bpjs", "no jkn", "jkn", "no. jkn", "nomor jkn", "no kis", "kis", "no. kis", "nomor kis")
 IDX_STATUS_KAWIN  = find_col("status kawin", "status perkawinan", "kawin", "perkawinan", "status nikah")
+IDX_RT            = find_col("rt")
+IDX_RW            = find_col("rw")
 
 print("ℹ️ Index kolom (wajib):", {
     "nama": IDX_NAMA, "jk": IDX_JK, "tempat_lahir": IDX_TMP_LAHIR,
@@ -571,7 +573,7 @@ print("ℹ️ Index kolom (wajib):", {
     "agama": IDX_AGAMA, "alamat": IDX_ALAMAT, "kecamatan": IDX_KEC, "kelurahan": IDX_KEL
 })
 print("ℹ️ Index kolom (opsional):", {
-    "bpjs": IDX_BPJS, "status_kawin": IDX_STATUS_KAWIN
+    "bpjs": IDX_BPJS, "status_kawin": IDX_STATUS_KAWIN, "rt": IDX_RT, "rw": IDX_RW
 })
 if IDX_BPJS is not None:
     print("  ⏭️ Kolom No BPJS/JKN/KIS ditemukan namun fitur pengisian di-nonaktifkan → dilewati")
@@ -581,6 +583,14 @@ if IDX_STATUS_KAWIN is not None:
     print("  ✅ Kolom Status Kawin ditemukan → akan diisi")
 else:
     print("  ⏭️ Kolom Status Kawin tidak ditemukan → dilewati")
+if IDX_RT is not None:
+    print("  ✅ Kolom RT ditemukan → akan diisi")
+else:
+    print("  ⏭️ Kolom RT tidak ditemukan → dilewati")
+if IDX_RW is not None:
+    print("  ✅ Kolom RW ditemukan → akan diisi")
+else:
+    print("  ⏭️ Kolom RW tidak ditemukan → dilewati")
 
 DATA_FIRST_ROW = header_row + 1
 
@@ -744,6 +754,8 @@ def close_modal_if_open():
 
 FAILED = []
 success_count = 0
+last_success_nama = None
+last_success_nik = None
 JUMLAH_DATA = NOMOR_SISWA_AKHIR - NOMOR_SISWA_AWAL + 1
 
 for i in range(JUMLAH_DATA):
@@ -773,6 +785,8 @@ for i in range(JUMLAH_DATA):
     # Kolom opsional
     bpjs_raw = get(IDX_BPJS) if IDX_BPJS is not None else None
     status_kawin_raw = str(get(IDX_STATUS_KAWIN) or "").strip() if IDX_STATUS_KAWIN is not None else None
+    rt_raw = get(IDX_RT) if IDX_RT is not None else None
+    rw_raw = get(IDX_RW) if IDX_RW is not None else None
 
     # --- Proses data ---
     nama_value = str(nama).strip()
@@ -782,6 +796,12 @@ for i in range(JUMLAH_DATA):
     no_kk_value = clean_digits(no_kk_raw)
     bpjs_value = clean_digits(bpjs_raw)
     status_kawin_option = map_status_kawin_to_option(status_kawin_raw) if status_kawin_raw else None
+    
+    rt_value = str(rt_raw).strip() if rt_raw is not None and str(rt_raw).strip().lower() != 'nan' else None
+    if rt_value and rt_value.endswith('.0'): rt_value = rt_value[:-2]
+    
+    rw_value = str(rw_raw).strip() if rw_raw is not None and str(rw_raw).strip().lower() != 'nan' else None
+    if rw_value and rw_value.endswith('.0'): rw_value = rw_value[:-2]
 
     if not tanggal_lahir_value:
         print(f"⚠️ Gagal format tanggal: {nama_value} -> {tgl_raw}")
@@ -921,6 +941,28 @@ for i in range(JUMLAH_DATA):
                 except Exception:
                     print(f"  ⚠️ Gagal isi Alamat")
 
+        # RT
+        if rt_value:
+            try:
+                rt_input = wait.until(EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[@id='modalTambahData']//input[@type='text' and @placeholder='RT' and contains(@class,'form-control')]"
+                )))
+                rt_input.click(); rt_input.clear(); rt_input.send_keys(rt_value)
+            except Exception:
+                print(f"  ⚠️ Gagal isi RT")
+
+        # RW
+        if rw_value:
+            try:
+                rw_input = wait.until(EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[@id='modalTambahData']//input[@type='text' and @placeholder='RW' and contains(@class,'form-control')]"
+                )))
+                rw_input.click(); rw_input.clear(); rw_input.send_keys(rw_value)
+            except Exception:
+                print(f"  ⚠️ Gagal isi RW")
+
         # === WILAYAH (via MUI Autocomplete, exact-match) ===
         if prov_value_for_ui:
             choose_mui_autocomplete('Provinsi', prov_value_for_ui)
@@ -939,6 +981,8 @@ for i in range(JUMLAH_DATA):
         # === SUBMIT TAMBAH ===
         submit_tambah_and_wait_close()
         success_count += 1
+        last_success_nama = nama_value
+        last_success_nik = nik_value
         print(f"✅ Sukses submit: {nama_value}")
 
     except Exception as e:
@@ -953,6 +997,18 @@ for i in range(JUMLAH_DATA):
 # =====================================================================
 
 print(f"\nSELESAI. Sukses: {success_count}, Gagal: {len(FAILED)}")
+
+if last_success_nama:
+    import os
+    excel_filename = os.path.basename(EXCEL_PATH_SISWA)
+    log_text = f"File Excel: {excel_filename}\nTerakhir Berhasil Diinput -> Nama: {last_success_nama} | NIK: {last_success_nik or '-'}\n"
+    print(f"\n📌 {log_text.strip()}")
+    try:
+        with open("last-success-log.txt", "w", encoding="utf-8") as f:
+            f.write(log_text)
+        print("📝 Data terakhir berhasil disimpan ke 'last-success-log.txt'.")
+    except Exception as e:
+        print(f"⚠️ Gagal menyimpan log terakhir: {e}")
 
 if FAILED:
     for nm in FAILED[:20]:
