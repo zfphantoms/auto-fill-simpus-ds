@@ -1008,6 +1008,11 @@ try:
 
     for idx, row_values in enumerate(iter_valid_rows(input_xlsx, NOMOR_AWAL, NOMOR_AKHIR), start=NOMOR_AWAL):
         try:
+            nik_value = clean_digits(row_values.get('nik'))
+            if not nik_value:
+                print(f"⚠️ Data {idx} (Nama: {row_values.get('name')}): NIK kosong. Skip.")
+                continue
+
             print(f"\n=== INPUT {idx} ===")
             open_tambah_data_modal()
 
@@ -1016,7 +1021,6 @@ try:
             gender_value = row_values['gender']
             tempat_lahir_value = row_values['birthplace']
             tanggal_lahir_value = normalize_date_yyyy_mm_dd(row_values['birthdate'])
-            nik_value = clean_digits(row_values.get('nik'))
             kk_value = clean_digits(row_values.get('kk'))
             bpjs_value = clean_digits(row_values.get('bpjs'))
             bpjs_status_value = row_values.get('bpjs_status')

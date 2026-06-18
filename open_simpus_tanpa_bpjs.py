@@ -829,6 +829,11 @@ for i in range(JUMLAH_DATA):
     gender_option = map_gender_to_option(jk)
     tanggal_lahir_value = normalize_date_yyyy_mm_dd(tgl_raw)
     nik_value = clean_digits(nik_raw)
+    
+    if not nik_value:
+        print(f"⚠️ Baris {excel_row} (Nama: {nama_value}): NIK kosong. Skip.")
+        continue
+
     no_kk_value = clean_digits(no_kk_raw)
     bpjs_value = clean_digits(bpjs_raw)
     status_kawin_option = map_status_kawin_to_option(status_kawin_raw) if status_kawin_raw else None
