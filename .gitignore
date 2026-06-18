@@ -15,6 +15,11 @@ dist/
 # Log files
 failed-log.txt
 *.log
+log-failed-sipp.txt
+last-input-sipp.txt
+last-success-log.txt
+LAST.txt
+
 
 # Unrelated Directories
 /Laporan Fingerprint/
