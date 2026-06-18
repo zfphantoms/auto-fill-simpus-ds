@@ -1110,6 +1110,9 @@ try:
                 Select(gender_select_el).select_by_visible_text(gender_option)
 
             # Tempat Lahir
+            if not tempat_lahir_value or tempat_lahir_value.lower() == 'nan':
+                tempat_lahir_value = kab_value_for_ui
+
             if tempat_lahir_value and tempat_lahir_value.lower() != 'nan':
                 tempat_lahir_input = wait.until(
                     EC.element_to_be_clickable(

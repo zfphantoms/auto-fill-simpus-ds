@@ -902,6 +902,9 @@ for i in range(JUMLAH_DATA):
             Select(gender_select_el).select_by_visible_text(gender_option)
 
         # Tempat Lahir
+        if not tempat_lahir or tempat_lahir.lower() == 'nan':
+            tempat_lahir = kab_value_for_ui
+
         if tempat_lahir and tempat_lahir.lower() != 'nan':
             tempat_lahir_input = wait.until(EC.element_to_be_clickable((
                 By.XPATH,
