@@ -3,6 +3,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
+
+# Explicit imports to help PyInstaller bundle dynamic dependencies
+import selenium.webdriver.chrome.webdriver
+import selenium.webdriver.chrome.service
+import selenium.webdriver.chrome.options
 import time
 import pandas as pd
 import re
