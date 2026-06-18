@@ -287,11 +287,17 @@ try:
 
     total_diproses = len(sliced_df)
     for i, (original_idx, row) in enumerate(sliced_df.iterrows()):
-        nik = str(row.get(nik_col) or '').strip()
-        # hilangkan spasi dan .0
-        nik = nik.replace(' ', '')
+        raw_nik = str(row.get(nik_col) or '').strip()
+        if raw_nik.lower() == 'nan':
+            raw_nik = ''
+            
+        # hilangkan spasi dan .0 (kasus pandas read excel number)
+        nik = raw_nik.replace(' ', '')
         if nik.endswith('.0'):
             nik = nik[:-2]
+            
+        # Ekstrak hanya digit (angka) untuk menangani variasi teks seperti 'tidak ada', '-', dll
+        nik = ''.join(ch for ch in nik if ch.isdigit())
 
         # Siapkan row output dari row input
         out = {col: (row.get(col) if col in row else None) for col in input_columns}
