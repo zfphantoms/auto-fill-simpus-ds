@@ -1,3 +1,4 @@
 selenium
 openpyxl
 pandas
+xlrd

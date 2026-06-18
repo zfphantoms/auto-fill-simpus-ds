@@ -41,6 +41,7 @@ FAILED_LOG_PATH = "failed-log.txt"
 # === PILIH FILE EXCEL (via File Explorer) ===
 import tkinter as tk
 from tkinter import filedialog
+import os
 
 _root = tk.Tk()
 _root.withdraw()  # Sembunyikan jendela utama tkinter
@@ -59,6 +60,41 @@ if not EXCEL_PATH_SISWA:
     sys.exit(1)
 
 print(f"✅ File yang dipilih: {EXCEL_PATH_SISWA}\n")
+
+# Konversi format .xls ke .xlsx jika diperlukan
+ORIGINAL_EXCEL_PATH = EXCEL_PATH_SISWA
+TEMP_XLSX_PATH = None
+
+if EXCEL_PATH_SISWA.lower().endswith('.xls'):
+    print("ℹ️ Format .xls terdeteksi. Mengonversi ke format .xlsx...")
+    try:
+        import xlrd
+    except ImportError:
+        print("❌ Library 'xlrd' belum terpasang. Library ini dibutuhkan untuk membaca file .xls.")
+        print("ℹ️ Menginstal 'xlrd' secara otomatis...")
+        import subprocess
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "xlrd"])
+            import xlrd
+            print("✅ 'xlrd' berhasil dipasang.")
+        except Exception as inst_err:
+            print(f"❌ Gagal memasang 'xlrd' secara otomatis: {inst_err}")
+            print("Silakan jalankan perintah berikut secara manual terlebih dahulu di terminal:")
+            print("   pip install xlrd")
+            sys.exit(1)
+    
+    try:
+        TEMP_XLSX_PATH = os.path.splitext(EXCEL_PATH_SISWA)[0] + "_temp_converted.xlsx"
+        print(f"ℹ️ Mengonversi {EXCEL_PATH_SISWA} -> {TEMP_XLSX_PATH} ...")
+        xls_data = pd.read_excel(EXCEL_PATH_SISWA, sheet_name=None, header=None)
+        with pd.ExcelWriter(TEMP_XLSX_PATH, engine='openpyxl') as writer:
+            for sheet_name, df_sheet in xls_data.items():
+                df_sheet.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
+        EXCEL_PATH_SISWA = TEMP_XLSX_PATH
+        print("✅ Konversi ke .xlsx selesai.")
+    except Exception as conv_err:
+        print(f"❌ Gagal mengonversi file .xls ke .xlsx: {conv_err}")
+        sys.exit(1)
 
 # === INPUT USER ===
 NOMOR_SISWA_AWAL = int(input("Masukkan nomor urut siswa awal (1-based): "))
@@ -550,12 +586,12 @@ def find_col(*aliases):
 
 
 # --- Kolom wajib ---
-IDX_NAMA      = find_col("nama", "nama siswa", "nama peserta", "nama lengkap")
+IDX_NAMA      = find_col("nama anggota keluarga", "nama", "nama siswa", "nama peserta", "nama lengkap")
 IDX_JK        = find_col("jk", "l p", "l/p", "jenis kelamin", "kelamin")
 IDX_TMP_LAHIR = find_col("tempat lahir", "tmpt lahir", "kota lahir")
 IDX_TGL_LAHIR = find_col("tanggal lahir", "tgl lahir", "lahir")
 IDX_NIK       = find_col("nik", "no ktp", "nomor ktp", "no. ktp", "no nik", "no. nik", "nik/kitas/kitap", "nomor induk kependudukan")
-IDX_NO_KK     = find_col("no kk", "no. kk", "nomor kk", "kk", "nomor kartu keluarga", "kartu keluarga", "no kartu keluarga", "no. kartu keluarga", "no.kk")
+IDX_NO_KK     = find_col("kode keluarga", "no kk", "no. kk", "nomor kk", "kk", "nomor kartu keluarga", "kartu keluarga", "no kartu keluarga", "no. kartu keluarga", "no.kk")
 IDX_AGAMA     = find_col("agama")
 IDX_ALAMAT    = find_col("alamat", "alamat domisili", "alamat rumah", "alamat tempat tinggal", "alamat lengkap")
 IDX_KEC       = find_col("kecamatan", "kec", "kecamatan domisili", "nama kecamatan")
@@ -993,14 +1029,28 @@ for i in range(JUMLAH_DATA):
 
 
 # =====================================================================
-# TULIS LOG GAGAL
+# TULIS LOG GAGAL & CLEANUP
 # =====================================================================
 
 print(f"\nSELESAI. Sukses: {success_count}, Gagal: {len(FAILED)}")
 
+# Tutup workbook untuk melepaskan handle file di Windows
+try:
+    wb.close()
+except Exception:
+    pass
+
+# Hapus file xlsx temporer hasil konversi jika ada
+if TEMP_XLSX_PATH and os.path.exists(TEMP_XLSX_PATH):
+    try:
+        os.remove(TEMP_XLSX_PATH)
+        print("🧹 File konversi sementara berhasil dihapus.")
+    except Exception as e:
+        print(f"⚠️ Gagal menghapus file konversi sementara: {e}")
+
 if last_success_nama:
     import os
-    excel_filename = os.path.basename(EXCEL_PATH_SISWA)
+    excel_filename = os.path.basename(ORIGINAL_EXCEL_PATH)
     log_text = f"File Excel: {excel_filename}\nTerakhir Berhasil Diinput -> Nama: {last_success_nama} | NIK: {last_success_nik or '-'}\n"
     print(f"\n📌 {log_text.strip()}")
     try:
