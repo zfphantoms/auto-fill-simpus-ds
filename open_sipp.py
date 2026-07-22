@@ -328,12 +328,18 @@ try:
         except Exception:
             driver.execute_script("arguments[0].click();", search_input)
             
+        # Tambahan delay sebelum mengetik (2 detik) agar tidak dianggap bot
+        time.sleep(2)
         search_input.send_keys(Keys.CONTROL, 'a')
         search_input.send_keys(Keys.BACKSPACE)
         search_input.send_keys(nik)
+        
+        # Tambahan delay kecil sebelum menekan ENTER
+        time.sleep(1)
         search_input.send_keys(Keys.ENTER)
 
-        time.sleep(1)
+        # Tambahan delay lebih lama setelah ENTER (5 detik) untuk loading data SIPP
+        time.sleep(5)
 
         try:
             sipp_data = scrape_detail_peserta()
